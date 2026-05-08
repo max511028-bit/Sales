@@ -317,20 +317,29 @@ td select {
 
 .funnel-row i {
   display: block;
-  height: 13px;
-  border-radius: 999px;
-  background: #1f4ed8;
+  height: 28px;
+  border-radius: 7px;
+  background: #dce8ff;
+  margin: 0 auto;
+  overflow: hidden;
 }
 
-.funnel-row.success i {
+.funnel-row i em {
+  display: block;
+  height: 100%;
+  background: #1f4ed8;
+  border-radius: 7px;
+}
+
+.funnel-row.success i em {
   background: #059669;
 }
 
-.funnel-row.loss i {
+.funnel-row.loss i em {
   background: #dc2626;
 }
 
-.funnel-row.service i {
+.funnel-row.service i em {
   background: #7a8494;
 }
 
@@ -346,6 +355,9 @@ td select {
   border-radius: 8px;
   padding: 16px;
   min-height: 110px;
+  display: grid;
+  justify-items: center;
+  text-align: center;
 }
 
 .sales-funnel strong,
@@ -367,16 +379,33 @@ td select {
   color: #667085;
 }
 
+.sales-funnel i {
+  display: block;
+  height: 14px;
+  border-radius: 999px;
+  background: #1f4ed8;
+  margin-top: 10px;
+}
+
 .loss-table {
   display: grid;
   gap: 11px;
 }
 
-.loss-table div {
+.loss-table button {
+  border: 0;
+  background: transparent;
   display: grid;
   grid-template-columns: minmax(130px, 1fr) 70px minmax(70px, 1fr) 70px;
   gap: 10px;
   align-items: center;
+  padding: 5px;
+  text-align: left;
+}
+
+.loss-table button.active {
+  background: #eef3ff;
+  box-shadow: inset 3px 0 0 #1f4ed8;
 }
 
 .loss-table b,
@@ -390,6 +419,23 @@ td select {
   height: 18px;
   background: #cfe3ff;
   border-radius: 2px;
+}
+
+.loss-comments {
+  border-top: 1px solid #e7ebf3;
+  margin-top: 16px;
+  padding-top: 10px;
+}
+
+.compact-table {
+  max-height: 300px;
+}
+
+.bitrix-link {
+  color: #174ea6;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .pivot-wrap {

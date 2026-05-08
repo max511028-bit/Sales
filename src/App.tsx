@@ -189,7 +189,7 @@ function App() {
             setBreakdown={setLeadBreakdown}
             mapping={mapping}
             onSelect={setSelected}
-            extra={<LossPanel title="Почему теряются лиды" lossData={leadLossData} />}
+            extra={<LossPanel title="Почему теряются лиды" type="lead" rows={filtered.leads} lossData={leadLossData} onSelect={setSelected} />}
           />
         )}
 
@@ -202,7 +202,7 @@ function App() {
             setBreakdown={setDealBreakdown}
             mapping={mapping}
             onSelect={setSelected}
-            extra={<LossPanel title="Почему теряются сделки" lossData={dealLossData} />}
+            extra={<LossPanel title="Почему теряются сделки" type="deal" rows={filtered.deals} lossData={dealLossData} onSelect={setSelected} />}
           />
         )}
 
@@ -354,8 +354,8 @@ function ThroughTab({
         <Panel title="Общая воронка продаж" wide>
           <SalesFunnel steps={steps} />
         </Panel>
-        <LossPanel title="Потери по лидам" lossData={leadLossData} />
-        <LossPanel title="Потери по сделкам" lossData={dealLossData} />
+        <LossPanel title="Потери по лидам" type="lead" rows={leads} lossData={leadLossData} onSelect={onSelect} />
+        <LossPanel title="Потери по сделкам" type="deal" rows={deals} lossData={dealLossData} onSelect={onSelect} />
         <Panel title="Качество связки">
           <ResponsiveContainer width="100%" height={290}>
             <PieChart>
@@ -423,15 +423,24 @@ function FunnelBars({ data }: { data: Array<{ name?: string; label?: string; val
   const max = Math.max(...data.map((item) => item.value), 1);
   return (
     <div className="funnel-list">
-      {data.map((item, index) => (
-        <div className={`funnel-row ${item.kind}`} key={item.label || item.name}>
-          <div>
-            <b>{index + 1}. {item.label || item.name}</b>
-            <span>{item.value}</span>
+      {data.map((item, index) => {
+        const previous = data[index - 1]?.value || item.value;
+        const stepConversion = previous ? Math.round((item.value / previous) * 1000) / 10 : 100;
+        const visualWidth = Math.max(100 - index * 10, 38);
+        return (
+          <div className={`funnel-row ${item.kind}`} key={item.label || item.name}>
+            <div>
+              <b>{index + 1}. {item.label || item.name}</b>
+              <span>
+                {item.value} · {index === 0 ? "100%" : `${stepConversion}%`}
+              </span>
+            </div>
+            <i style={{ width: `${visualWidth}%` }}>
+              <em style={{ width: `${Math.max((item.value / max) * 100, 4)}%` }} />
+            </i>
           </div>
-          <i style={{ width: `${Math.max((item.value / max) * 100, 4)}%` }} />
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -449,6 +458,7 @@ function SalesFunnel({ steps }: { steps: Array<{ name: string; value: number }> 
             <strong>{step.value}</strong>
             <span>{step.name}</span>
             <small>{index === 0 ? "100%" : `${fromPrev}% от шага / ${fromStart}% от входа`}</small>
+            <i style={{ width: `${Math.max(100 - index * 11, 40)}%` }} />
           </div>
         );
       })}
@@ -470,22 +480,103 @@ function HorizontalBars({ data }: { data: Array<{ name: string; value: number }>
   );
 }
 
-function LossPanel({ title, lossData }: { title: string; lossData: Array<{ name: string; value: number }> }) {
+function LossPanel({
+  title,
+  type,
+  rows,
+  lossData,
+  onSelect,
+}: {
+  title: string;
+  type: EntityType;
+  rows: StoredEntity[];
+  lossData: Array<{ name: string; value: number }>;
+  onSelect: (entity: StoredEntity) => void;
+}) {
+  const [selectedReason, setSelectedReason] = useState("");
   const total = lossData.reduce((sum, item) => sum + item.value, 0);
+  const activeReason = selectedReason || lossData[0]?.name || "";
+  const comments = rows
+    .filter((row) => classifyStage(type, stageOf(type, row.raw)).kind === "loss")
+    .filter((row) => lossReasonFor(type, stageOf(type, row.raw)) === activeReason)
+    .map((row) => ({ row, comment: commentOf(row) }))
+    .slice(0, 80);
   return (
     <Panel title={title}>
       <div className="loss-table">
         {lossData.slice(0, 12).map((item) => (
-          <div key={item.name}>
+          <button className={activeReason === item.name ? "active" : ""} key={item.name} onClick={() => setSelectedReason(item.name)}>
             <span>{item.name}</span>
             <b>{item.value}</b>
             <i style={{ width: `${total ? (item.value / total) * 100 : 0}%` }} />
             <em>{total ? `${Math.round((item.value / total) * 1000) / 10}%` : "0%"}</em>
-          </div>
+          </button>
         ))}
       </div>
+      {activeReason && (
+        <div className="loss-comments">
+          <h3>{activeReason}: комментарии менеджеров</h3>
+          <div className="table-wrap compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Название</th>
+                  <th>Стадия</th>
+                  <th>Комментарий</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comments.map(({ row, comment }) => (
+                  <tr key={`${row.type}-${row.id}`} onClick={() => onSelect(row)}>
+                    <td>
+                      <BitrixLink type={row.type} id={row.id} />
+                    </td>
+                    <td>{titleOf(row.type, row.raw)}</td>
+                    <td>{stageOf(row.type, row.raw)}</td>
+                    <td>{comment || "Комментарий не заполнен"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </Panel>
   );
+}
+
+function bitrixUrl(type: EntityType, id: string) {
+  const entityPath = type === "lead" ? "lead" : "deal";
+  return `https://b2b-bitrix.outsourcing-kadrov.ru/crm/${entityPath}/details/${id}/`;
+}
+
+function BitrixLink({ type, id }: { type: EntityType; id: string }) {
+  return (
+    <a className="bitrix-link" href={bitrixUrl(type, id)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+      {id}
+    </a>
+  );
+}
+
+function commentOf(entity: StoredEntity) {
+  const priority = [
+    "Комментарий",
+    "Дополнительно о стадии",
+    "Дополнительно об источнике",
+    "Описание события",
+    "Компания: Комментарий",
+    "Контакт: Комментарий",
+  ];
+  for (const field of priority) {
+    const value = entity.raw[field]?.trim();
+    if (value) return value;
+  }
+  const commentField = Object.keys(entity.raw).find((field) => {
+    const lower = field.toLowerCase();
+    return lower.includes("коммент") || lower.includes("comment");
+  });
+  return commentField ? entity.raw[commentField] || "" : "";
 }
 
 function EntityTable({ rows, onSelect }: { rows: StoredEntity[]; onSelect: (entity: StoredEntity) => void }) {
@@ -507,7 +598,7 @@ function EntityTable({ rows, onSelect }: { rows: StoredEntity[]; onSelect: (enti
             const summary = entitySummary(row);
             return (
               <tr key={`${row.type}-${row.id}`} onClick={() => onSelect(row)}>
-                <td>{row.id}</td>
+                <td><BitrixLink type={row.type} id={row.id} /></td>
                 <td>{summary.title}</td>
                 <td>{summary.stage}</td>
                 <td>{summary.responsible}</td>
@@ -582,10 +673,18 @@ function LinkedTable({
             const lead = leads.find((item) => item.id === link?.leadId);
             return (
               <tr key={deal.id} onClick={() => onSelect(deal)}>
-                <td>{titleOf("deal", deal.raw)}</td>
+                <td><BitrixLink type="deal" id={deal.id} /> · {titleOf("deal", deal.raw)}</td>
                 <td>{stageOf("deal", deal.raw)}</td>
                 <td><Link2 size={14} /> {link?.confidence || "none"}</td>
-                <td>{lead ? `${lead.id} · ${titleOf("lead", lead.raw)}` : link?.candidateLeadIds.join(", ")}</td>
+                <td>
+                  {lead ? (
+                    <>
+                      <BitrixLink type="lead" id={lead.id} /> · {titleOf("lead", lead.raw)}
+                    </>
+                  ) : (
+                    link?.candidateLeadIds.join(", ")
+                  )}
+                </td>
                 <td>{link?.matchedFields.join(", ")}</td>
               </tr>
             );
@@ -621,7 +720,7 @@ function EntityDrawer({
         <button className="close" onClick={onClose}>Закрыть</button>
         <h2>{summary.title}</h2>
         <div className="drawer-meta">
-          <span>{entity.type === "lead" ? "Лид" : "Сделка"} #{entity.id}</span>
+          <span>{entity.type === "lead" ? "Лид" : "Сделка"} #<BitrixLink type={entity.type} id={entity.id} /></span>
           <span>{summary.stage}</span>
           <span>{summary.responsible}</span>
         </div>
@@ -629,7 +728,7 @@ function EntityDrawer({
         {relatedEntities.length ? (
           relatedEntities.map((item) => (
             <div className="related" key={`${item.type}-${item.id}`}>
-              <b>{item.type === "lead" ? "Лид" : "Сделка"} #{item.id}</b>
+              <b>{item.type === "lead" ? "Лид" : "Сделка"} #<BitrixLink type={item.type} id={item.id} /></b>
               <span>{titleOf(item.type, item.raw)}</span>
             </div>
           ))
