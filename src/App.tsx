@@ -108,7 +108,7 @@ function App() {
   }
 
   const leadStages = leadOnlyFunnel(filtered.leads);
-  const dealStages = funnelDistribution(filtered.deals, "deal");
+  const dealStages = funnelDistribution(filtered.deals, "deal").filter((step) => !["loss", "service"].includes(step.kind));
   const leadLossData = groupCount(
     filtered.leads.filter((lead) => classifyStage("lead", stageOf("lead", lead.raw)).kind === "loss"),
     (lead) => lossReasonFor("lead", stageOf("lead", lead.raw)),
@@ -281,7 +281,7 @@ function FunnelTab({
 }: {
   type: EntityType;
   rows: StoredEntity[];
-  stages: Array<{ name?: string; label?: string; value: number; kind: string }>;
+  stages: Array<{ name?: string; label?: string; value: number; kind: string; sourceStages?: string[] }>;
   breakdown: Breakdown;
   setBreakdown: (value: Breakdown) => void;
   mapping: StageMapping[];
@@ -419,7 +419,7 @@ function Panel({ title, children, wide }: { title: string; children: ReactNode; 
   );
 }
 
-function FunnelBars({ data }: { data: Array<{ name?: string; label?: string; value: number; kind: string }> }) {
+function FunnelBars({ data }: { data: Array<{ name?: string; label?: string; value: number; kind: string; sourceStages?: string[] }> }) {
   const max = Math.max(...data.map((item) => item.value), 1);
   return (
     <div className="funnel-list">
@@ -427,8 +427,9 @@ function FunnelBars({ data }: { data: Array<{ name?: string; label?: string; val
         const previous = data[index - 1]?.value || item.value;
         const stepConversion = previous ? Math.round((item.value / previous) * 1000) / 10 : 100;
         const visualWidth = Math.max(100 - index * 10, 38);
+        const tooltip = item.sourceStages?.length ? `Включены стадии Bitrix:\n${item.sourceStages.join("\n")}` : "Стадии пока не найдены";
         return (
-          <div className={`funnel-row ${item.kind}`} key={item.label || item.name}>
+          <div className={`funnel-row ${item.kind}`} key={item.label || item.name} title={tooltip}>
             <div>
               <b>{index + 1}. {item.label || item.name}</b>
               <span>
@@ -445,7 +446,7 @@ function FunnelBars({ data }: { data: Array<{ name?: string; label?: string; val
   );
 }
 
-function SalesFunnel({ steps }: { steps: Array<{ name: string; value: number }> }) {
+function SalesFunnel({ steps }: { steps: Array<{ name: string; value: number; sourceStages?: string[] }> }) {
   const first = steps[0]?.value || 0;
   return (
     <div className="sales-funnel">
@@ -454,7 +455,7 @@ function SalesFunnel({ steps }: { steps: Array<{ name: string; value: number }> 
         const fromStart = first ? Math.round((step.value / first) * 1000) / 10 : 0;
         const fromPrev = prev ? Math.round((step.value / prev) * 1000) / 10 : 0;
         return (
-          <div key={step.name}>
+          <div key={step.name} title={step.sourceStages?.length ? `Включены стадии Bitrix:\n${step.sourceStages.join("\n")}` : ""}>
             <strong>{step.value}</strong>
             <span>{step.name}</span>
             <small>{index === 0 ? "100%" : `${fromPrev}% от шага / ${fromStart}% от входа`}</small>

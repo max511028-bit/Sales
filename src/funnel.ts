@@ -6,6 +6,7 @@ export interface FunnelStep {
   label: string;
   order: number;
   kind: "active" | "success" | "loss" | "service";
+  sourceStages?: string[];
 }
 
 const LEAD_STEPS: FunnelStep[] = [
@@ -110,11 +111,15 @@ export function lossReasonFor(type: EntityType, stage: string) {
 }
 
 export function funnelDistribution(rows: StoredEntity[], type: EntityType) {
-  const counts = new Map(funnelSteps(type).map((step) => [step.key, { ...step, value: 0 }]));
+  const counts = new Map(funnelSteps(type).map((step) => [step.key, { ...step, value: 0, sourceStages: [] as string[] }]));
   rows.forEach((row) => {
-    const step = classifyStage(type, stageOf(type, row.raw));
+    const rawStage = stageOf(type, row.raw);
+    const step = classifyStage(type, rawStage);
     const current = counts.get(step.key);
-    if (current) current.value += 1;
+    if (current) {
+      current.value += 1;
+      if (!current.sourceStages.includes(rawStage)) current.sourceStages.push(rawStage);
+    }
   });
   return [...counts.values()].filter((step) => step.value > 0).sort((a, b) => a.order - b.order);
 }
@@ -127,11 +132,11 @@ export function cumulativeLeadFunnel(leads: StoredEntity[], dealsCreated: number
   });
   const target = nonService.filter((lead) => classifyStage("lead", stageOf("lead", lead.raw)).key === "target");
   return [
-    { name: "Поступило лидов", value: nonService.length },
-    { name: "Удалось дозвониться", value: contacted.length },
-    { name: "Целевые лиды", value: target.length },
-    { name: "Создано сделок", value: dealsCreated },
-    { name: "Заключено договоров", value: contracts },
+    { name: "Поступило лидов", value: nonService.length, sourceStages: uniqueStages(nonService, "lead") },
+    { name: "Удалось дозвониться", value: contacted.length, sourceStages: uniqueStages(contacted, "lead") },
+    { name: "Целевые лиды", value: target.length, sourceStages: uniqueStages(target, "lead") },
+    { name: "Создано сделок", value: dealsCreated, sourceStages: ["Все сделки, кроме технических"] },
+    { name: "Заключено договоров", value: contracts, sourceStages: ["Вышел первый сотрудник на смену", "Передан аккаунт-отделу", "Проект закончен", "Существующий клиент"] },
   ];
 }
 
@@ -142,15 +147,17 @@ export function leadOnlyFunnel(leads: StoredEntity[]) {
     return ["contact", "target", "deferred"].includes(step.key);
   });
   const target = nonService.filter((lead) => classifyStage("lead", stageOf("lead", lead.raw)).key === "target");
-  const lost = nonService.filter((lead) => classifyStage("lead", stageOf("lead", lead.raw)).kind === "loss");
   return [
-    { key: "new", label: "Поступило лидов", order: 1, kind: "active" as const, value: nonService.length },
-    { key: "contact", label: "Удалось дозвониться", order: 2, kind: "active" as const, value: contacted.length },
-    { key: "target", label: "Целевые лиды", order: 3, kind: "success" as const, value: target.length },
-    { key: "lost", label: "Потеряно лидов", order: 4, kind: "loss" as const, value: lost.length },
+    { key: "new", label: "Поступило лидов", order: 1, kind: "active" as const, value: nonService.length, sourceStages: uniqueStages(nonService, "lead") },
+    { key: "contact", label: "Удалось дозвониться", order: 2, kind: "active" as const, value: contacted.length, sourceStages: uniqueStages(contacted, "lead") },
+    { key: "target", label: "Целевые лиды", order: 3, kind: "success" as const, value: target.length, sourceStages: uniqueStages(target, "lead") },
   ];
 }
 
 export function stageTitle(type: EntityType, record: RawRecord) {
   return classifyStage(type, stageOf(type, record)).label;
+}
+
+function uniqueStages(rows: StoredEntity[], type: EntityType) {
+  return [...new Set(rows.map((row) => stageOf(type, row.raw)))].filter(Boolean).sort((a, b) => a.localeCompare(b, "ru"));
 }
