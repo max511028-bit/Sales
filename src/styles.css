@@ -38,6 +38,10 @@ button {
   height: 100vh;
 }
 
+.sidebar.compact {
+  width: 250px;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -187,6 +191,44 @@ h3 {
   margin-bottom: 18px;
 }
 
+.report-filters {
+  grid-template-columns: auto repeat(2, minmax(150px, 180px)) repeat(4, minmax(150px, 1fr)) auto;
+}
+
+.report-filters label {
+  display: grid;
+  gap: 4px;
+}
+
+.report-filters label span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.segment-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 16px;
+}
+
+.segment-tabs button {
+  min-width: 150px;
+  border: 1px solid #d8deea;
+  background: #eaf0f7;
+  color: #39465a;
+  padding: 11px 16px;
+}
+
+.segment-tabs button.active {
+  background: #242424;
+  color: #fff;
+  border-color: #242424;
+}
+
+.compact-kpis {
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+}
+
 .filters input,
 .filters select,
 .search input,
@@ -246,6 +288,112 @@ td select {
 
 .panel.wide {
   grid-column: 1 / -1;
+}
+
+.funnel-list {
+  display: grid;
+  gap: 13px;
+}
+
+.funnel-row {
+  display: grid;
+  gap: 7px;
+}
+
+.funnel-row div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.funnel-row b {
+  font-weight: 700;
+}
+
+.funnel-row span {
+  color: #101827;
+  font-weight: 800;
+}
+
+.funnel-row i {
+  display: block;
+  height: 13px;
+  border-radius: 999px;
+  background: #1f4ed8;
+}
+
+.funnel-row.success i {
+  background: #059669;
+}
+
+.funnel-row.loss i {
+  background: #dc2626;
+}
+
+.funnel-row.service i {
+  background: #7a8494;
+}
+
+.sales-funnel {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.sales-funnel div {
+  background: #f6f9ff;
+  border: 1px solid #dbe8ff;
+  border-radius: 8px;
+  padding: 16px;
+  min-height: 110px;
+}
+
+.sales-funnel strong,
+.sales-funnel span,
+.sales-funnel small {
+  display: block;
+}
+
+.sales-funnel strong {
+  font-size: 28px;
+}
+
+.sales-funnel span {
+  margin: 8px 0;
+  font-weight: 700;
+}
+
+.sales-funnel small {
+  color: #667085;
+}
+
+.loss-table {
+  display: grid;
+  gap: 11px;
+}
+
+.loss-table div {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 70px minmax(70px, 1fr) 70px;
+  gap: 10px;
+  align-items: center;
+}
+
+.loss-table b,
+.loss-table em {
+  text-align: right;
+  font-style: normal;
+}
+
+.loss-table i {
+  display: block;
+  height: 18px;
+  background: #cfe3ff;
+  border-radius: 2px;
+}
+
+.pivot-wrap {
+  max-height: 420px;
 }
 
 .panel-title {
