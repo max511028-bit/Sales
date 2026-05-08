@@ -20,7 +20,7 @@ import { FIELD, amountOf, responsibleOf, sourceOf, stageOf, titleOf } from "./fi
 import { classifyStage, cumulativeLeadFunnel, dealOnlyFunnel, funnelDistribution, leadOnlyFunnel, lossReasonFor, stageTitle } from "./funnel";
 import type { DashboardFilters, EntityLink, EntityType, StageMapping, StoredEntity } from "./types";
 
-type MainTab = "leadFunnel" | "dealFunnel" | "through";
+type MainTab = "leadFunnel" | "dealFunnel" | "workingClients" | "through";
 type Breakdown = "funnel" | "source" | "manager" | "project";
 
 const COLORS = ["#1f4ed8", "#1890ff", "#52c41a", "#fa8c16", "#eb2f96", "#722ed1", "#607d8b"];
@@ -141,6 +141,9 @@ function App() {
           <button className={active === "dealFunnel" ? "active" : ""} onClick={() => setActive("dealFunnel")}>
             <BarChart3 size={18} /> Воронка по сделкам
           </button>
+          <button className={active === "workingClients" ? "active" : ""} onClick={() => setActive("workingClients")}>
+            <Database size={18} /> Клиенты в работе
+          </button>
           <button className={active === "through" ? "active" : ""} onClick={() => setActive("through")}>
             <GitBranch size={18} /> Сквозная
           </button>
@@ -150,7 +153,15 @@ function App() {
       <main>
         <header className="topbar">
           <div>
-            <h1>{active === "leadFunnel" ? "Воронка по лидам" : active === "dealFunnel" ? "Воронка по сделкам" : "Сквозная аналитика"}</h1>
+            <h1>
+              {active === "leadFunnel"
+                ? "Воронка по лидам"
+                : active === "dealFunnel"
+                  ? "Воронка по сделкам"
+                  : active === "workingClients"
+                    ? "Клиенты в работе"
+                    : "Сквозная аналитика"}
+            </h1>
             <p>Период, источники, менеджеры и проекты меняются общими фильтрами.</p>
           </div>
           <div className="upload-row">
@@ -204,6 +215,10 @@ function App() {
             onSelect={setSelected}
             extra={<LossPanel title="Почему теряются сделки" type="deal" rows={filtered.deals} lossData={dealLossData} onSelect={setSelected} />}
           />
+        )}
+
+        {active === "workingClients" && (
+          <WorkingClientsTab deals={filtered.deals} onSelect={setSelected} />
         )}
 
         {active === "through" && (
@@ -382,6 +397,68 @@ function ThroughTab({
         </div>
         <Panel title="Связанные сделки" wide>
           <LinkedTable deals={deals} linkMap={linkMap} leads={leads} onSelect={onSelect} />
+        </Panel>
+      </section>
+    </>
+  );
+}
+
+function WorkingClientsTab({ deals, onSelect }: { deals: StoredEntity[]; onSelect: (entity: StoredEntity) => void }) {
+  const activeDeals = deals
+    .filter((deal) => ["qualification", "work", "proposal", "agreement"].includes(classifyStage("deal", stageOf("deal", deal.raw)).key))
+    .sort((a, b) => {
+      const order = { agreement: 1, proposal: 2, work: 3, qualification: 4 } as Record<string, number>;
+      return order[classifyStage("deal", stageOf("deal", a.raw)).key] - order[classifyStage("deal", stageOf("deal", b.raw)).key];
+    });
+  const byStage = groupCount(activeDeals, (deal) => stageTitle("deal", deal.raw));
+  return (
+    <>
+      <section className="kpi-grid compact-kpis">
+        <Kpi title="Клиентов в работе" value={activeDeals.length} />
+        <Kpi title="КП / предложение" value={activeDeals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).key === "proposal").length} />
+        <Kpi title="Согласование" value={activeDeals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).key === "agreement").length} />
+        <Kpi title="Сумма в работе" value={formatMoney(activeDeals.reduce((sum, deal) => sum + amountOf(deal.raw), 0))} />
+      </section>
+      <section className="grid two">
+        <Panel title="Где находятся клиенты">
+          <HorizontalBars data={byStage} />
+        </Panel>
+        <div className="panel warning-panel">
+          <h2>Для совещания по продажам</h2>
+          <p>
+            Здесь только активные сделки, где еще нет договора: квалификация, проработка, КП и согласование. Нецелевые,
+            проигранные, технические и уже успешные сделки сюда не попадают.
+          </p>
+        </div>
+        <Panel title="Список клиентов в работе" wide>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Клиент</th>
+                  <th>Этап</th>
+                  <th>Стадия Bitrix</th>
+                  <th>Менеджер</th>
+                  <th>Сумма</th>
+                  <th>Комментарий</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeDeals.map((deal) => (
+                  <tr key={deal.id} onClick={() => onSelect(deal)}>
+                    <td><BitrixLink type="deal" id={deal.id} /></td>
+                    <td>{titleOf("deal", deal.raw)}</td>
+                    <td>{stageTitle("deal", deal.raw)}</td>
+                    <td>{stageOf("deal", deal.raw)}</td>
+                    <td>{responsibleOf(deal.raw)}</td>
+                    <td>{formatMoney(amountOf(deal.raw))}</td>
+                    <td>{commentOf(deal) || "Комментарий не заполнен"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Panel>
       </section>
     </>

@@ -46,13 +46,6 @@ export function classifyStage(type: EntityType, stage: string): FunnelStep {
   if (!normalized || normalized.includes("дубль") || normalized.includes("тест")) return byKey("service");
 
   if (type === "lead") {
-    if (normalized.includes("не обработан")) return byKey("new");
-    if (normalized.includes("в работе") || normalized.includes("поиск контактов")) return byKey("processing");
-    if (normalized.includes("обработан") || normalized.includes("связь установлена") || normalized.includes("существующий клиент")) {
-      return byKey("contact");
-    }
-    if (normalized.includes("качественный лид")) return byKey("target");
-    if (normalized.includes("отлож")) return byKey("deferred");
     if (
       normalized.includes("недозвон") ||
       normalized.includes("нецелевой") ||
@@ -61,6 +54,13 @@ export function classifyStage(type: EntityType, stage: string): FunnelStep {
     ) {
       return byKey("lost");
     }
+    if (normalized.includes("не обработан")) return byKey("new");
+    if (normalized.includes("в работе") || normalized.includes("поиск контактов")) return byKey("processing");
+    if (normalized.includes("обработан") || normalized.includes("связь установлена") || normalized.includes("существующий клиент")) {
+      return byKey("contact");
+    }
+    if (normalized === "качественный лид") return byKey("target");
+    if (normalized.includes("отлож")) return byKey("deferred");
     return byKey("processing");
   }
 
