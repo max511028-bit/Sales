@@ -298,6 +298,7 @@ td select {
 .funnel-row {
   display: grid;
   gap: 7px;
+  position: relative;
 }
 
 .funnel-row div {
@@ -329,6 +330,7 @@ td select {
   height: 100%;
   background: #1f4ed8;
   border-radius: 7px;
+  width: 100%;
 }
 
 .funnel-row.success i em {
@@ -341,6 +343,25 @@ td select {
 
 .funnel-row.service i em {
   background: #7a8494;
+}
+
+.funnel-row small {
+  display: none;
+  white-space: pre-line;
+  background: #101827;
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  max-width: min(620px, 90vw);
+  z-index: 5;
+  box-shadow: 0 14px 30px rgba(16, 24, 39, 0.22);
+}
+
+.funnel-row:hover small {
+  display: block;
 }
 
 .sales-funnel {

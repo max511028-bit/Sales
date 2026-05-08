@@ -154,6 +154,24 @@ export function leadOnlyFunnel(leads: StoredEntity[]) {
   ];
 }
 
+export function dealOnlyFunnel(deals: StoredEntity[]) {
+  const nonService = deals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).kind !== "service");
+  const rowsFor = (key: string) => nonService.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).key === key);
+  const qualification = rowsFor("qualification");
+  const work = rowsFor("work");
+  const proposal = rowsFor("proposal");
+  const agreement = rowsFor("agreement");
+  const success = rowsFor("success");
+  return [
+    { key: "created", label: "Создано сделок", order: 1, kind: "active" as const, value: nonService.length, sourceStages: uniqueStages(nonService, "deal") },
+    { key: "qualification", label: "Квалификация", order: 2, kind: "active" as const, value: qualification.length, sourceStages: uniqueStages(qualification, "deal") },
+    { key: "work", label: "Проработка", order: 3, kind: "active" as const, value: work.length, sourceStages: uniqueStages(work, "deal") },
+    { key: "proposal", label: "КП / предложение", order: 4, kind: "active" as const, value: proposal.length, sourceStages: uniqueStages(proposal, "deal") },
+    { key: "agreement", label: "Согласование", order: 5, kind: "active" as const, value: agreement.length, sourceStages: uniqueStages(agreement, "deal") },
+    { key: "success", label: "Договор / старт", order: 6, kind: "success" as const, value: success.length, sourceStages: uniqueStages(success, "deal") },
+  ];
+}
+
 export function stageTitle(type: EntityType, record: RawRecord) {
   return classifyStage(type, stageOf(type, record)).label;
 }

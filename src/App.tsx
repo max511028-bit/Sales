@@ -17,7 +17,7 @@ import { importCsv } from "./importer";
 import { ensureDefaultStageMapping } from "./stageDefaults";
 import { entitySummary, getFiltered, groupCount, kpis, options } from "./analytics";
 import { FIELD, amountOf, responsibleOf, sourceOf, stageOf, titleOf } from "./fields";
-import { classifyStage, cumulativeLeadFunnel, funnelDistribution, leadOnlyFunnel, lossReasonFor, stageTitle } from "./funnel";
+import { classifyStage, cumulativeLeadFunnel, dealOnlyFunnel, funnelDistribution, leadOnlyFunnel, lossReasonFor, stageTitle } from "./funnel";
 import type { DashboardFilters, EntityLink, EntityType, StageMapping, StoredEntity } from "./types";
 
 type MainTab = "leadFunnel" | "dealFunnel" | "through";
@@ -108,7 +108,7 @@ function App() {
   }
 
   const leadStages = leadOnlyFunnel(filtered.leads);
-  const dealStages = funnelDistribution(filtered.deals, "deal").filter((step) => !["loss", "service"].includes(step.kind));
+  const dealStages = dealOnlyFunnel(filtered.deals);
   const leadLossData = groupCount(
     filtered.leads.filter((lead) => classifyStage("lead", stageOf("lead", lead.raw)).kind === "loss"),
     (lead) => lossReasonFor("lead", stageOf("lead", lead.raw)),
@@ -424,21 +424,21 @@ function FunnelBars({ data }: { data: Array<{ name?: string; label?: string; val
   return (
     <div className="funnel-list">
       {data.map((item, index) => {
-        const previous = data[index - 1]?.value || item.value;
-        const stepConversion = previous ? Math.round((item.value / previous) * 1000) / 10 : 100;
-        const visualWidth = Math.max(100 - index * 10, 38);
+        const fromStart = max ? Math.round((item.value / max) * 1000) / 10 : 0;
+        const visualWidth = Math.max(100 - index * 11, 34);
         const tooltip = item.sourceStages?.length ? `Включены стадии Bitrix:\n${item.sourceStages.join("\n")}` : "Стадии пока не найдены";
         return (
           <div className={`funnel-row ${item.kind}`} key={item.label || item.name} title={tooltip}>
             <div>
               <b>{index + 1}. {item.label || item.name}</b>
               <span>
-                {item.value} · {index === 0 ? "100%" : `${stepConversion}%`}
+                {item.value} · {index === 0 ? "100%" : `${fromStart}% от входа`}
               </span>
             </div>
             <i style={{ width: `${visualWidth}%` }}>
-              <em style={{ width: `${Math.max((item.value / max) * 100, 4)}%` }} />
+              <em />
             </i>
+            <small>{tooltip}</small>
           </div>
         );
       })}
