@@ -16,7 +16,7 @@ import { db } from "./db";
 import { importCsv } from "./importer";
 import { ensureDefaultStageMapping } from "./stageDefaults";
 import { entitySummary, getFiltered, groupCount, kpis, options } from "./analytics";
-import { FIELD, amountOf, responsibleOf, sourceOf, stageOf, titleOf } from "./fields";
+import { FIELD, amountOf, parseBitrixDate, responsibleOf, sourceOf, stageOf, titleOf, value } from "./fields";
 import { classifyStage, cumulativeLeadFunnel, dealOnlyFunnel, funnelDistribution, leadOnlyFunnel, lossReasonFor, stageTitle } from "./funnel";
 import type { DashboardFilters, EntityLink, EntityType, StageMapping, StoredEntity } from "./types";
 
@@ -404,12 +404,26 @@ function ThroughTab({
 }
 
 function WorkingClientsTab({ deals, onSelect }: { deals: StoredEntity[]; onSelect: (entity: StoredEntity) => void }) {
+  const [stageFilter, setStageFilter] = useState("all");
+  const liveStageKeys = ["qualification", "work", "proposal", "agreement"];
+  const stageOrder = { agreement: 1, proposal: 2, work: 3, qualification: 4 } as Record<string, number>;
+  const stageLabels = {
+    all: "Все",
+    agreement: "Согласование",
+    proposal: "КП",
+    work: "Проработка",
+    qualification: "Квалификация",
+  } as Record<string, string>;
+
   const activeDeals = deals
-    .filter((deal) => ["qualification", "work", "proposal", "agreement"].includes(classifyStage("deal", stageOf("deal", deal.raw)).key))
+    .filter((deal) => liveStageKeys.includes(classifyStage("deal", stageOf("deal", deal.raw)).key))
     .sort((a, b) => {
-      const order = { agreement: 1, proposal: 2, work: 3, qualification: 4 } as Record<string, number>;
-      return order[classifyStage("deal", stageOf("deal", a.raw)).key] - order[classifyStage("deal", stageOf("deal", b.raw)).key];
+      const stageDiff = stageOrder[classifyStage("deal", stageOf("deal", a.raw)).key] - stageOrder[classifyStage("deal", stageOf("deal", b.raw)).key];
+      if (stageDiff !== 0) return stageDiff;
+      return (lastContactDate(a)?.getTime() || 0) - (lastContactDate(b)?.getTime() || 0);
     });
+  const visibleDeals = activeDeals.filter((deal) => stageFilter === "all" || classifyStage("deal", stageOf("deal", deal.raw)).key === stageFilter);
+  const staleDeals = activeDeals.filter((deal) => daysWithoutContact(deal) >= 7);
   const byStage = groupCount(activeDeals, (deal) => stageTitle("deal", deal.raw));
   return (
     <>
@@ -417,6 +431,7 @@ function WorkingClientsTab({ deals, onSelect }: { deals: StoredEntity[]; onSelec
         <Kpi title="Клиентов в работе" value={activeDeals.length} />
         <Kpi title="КП / предложение" value={activeDeals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).key === "proposal").length} />
         <Kpi title="Согласование" value={activeDeals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).key === "agreement").length} />
+        <Kpi title="Нет контакта 7+ дней" value={staleDeals.length} />
         <Kpi title="Сумма в работе" value={formatMoney(activeDeals.reduce((sum, deal) => sum + amountOf(deal.raw), 0))} />
       </section>
       <section className="grid two">
@@ -431,6 +446,14 @@ function WorkingClientsTab({ deals, onSelect }: { deals: StoredEntity[]; onSelec
           </p>
         </div>
         <Panel title="Список клиентов в работе" wide>
+          <div className="stage-filter">
+            {Object.entries(stageLabels).map(([key, label]) => (
+              <button key={key} className={stageFilter === key ? "active" : ""} onClick={() => setStageFilter(key)}>
+                {label}
+                <span>{key === "all" ? activeDeals.length : activeDeals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).key === key).length}</span>
+              </button>
+            ))}
+          </div>
           <div className="table-wrap">
             <table>
               <thead>
@@ -441,21 +464,28 @@ function WorkingClientsTab({ deals, onSelect }: { deals: StoredEntity[]; onSelec
                   <th>Стадия Bitrix</th>
                   <th>Менеджер</th>
                   <th>Сумма</th>
+                  <th>Последний контакт</th>
+                  <th>Без контакта</th>
                   <th>Комментарий</th>
                 </tr>
               </thead>
               <tbody>
-                {activeDeals.map((deal) => (
-                  <tr key={deal.id} onClick={() => onSelect(deal)}>
-                    <td><BitrixLink type="deal" id={deal.id} /></td>
-                    <td>{titleOf("deal", deal.raw)}</td>
-                    <td>{stageTitle("deal", deal.raw)}</td>
-                    <td>{stageOf("deal", deal.raw)}</td>
-                    <td>{responsibleOf(deal.raw)}</td>
-                    <td>{formatMoney(amountOf(deal.raw))}</td>
-                    <td>{commentOf(deal) || "Комментарий не заполнен"}</td>
-                  </tr>
-                ))}
+                {visibleDeals.map((deal) => {
+                  const days = daysWithoutContact(deal);
+                  return (
+                    <tr key={deal.id} onClick={() => onSelect(deal)} className={days >= 7 ? "stale-row" : ""}>
+                      <td><BitrixLink type="deal" id={deal.id} /></td>
+                      <td>{titleOf("deal", deal.raw)}</td>
+                      <td>{stageTitle("deal", deal.raw)}</td>
+                      <td>{stageOf("deal", deal.raw)}</td>
+                      <td>{responsibleOf(deal.raw)}</td>
+                      <td>{formatMoney(amountOf(deal.raw))}</td>
+                      <td>{lastContactText(deal)}</td>
+                      <td>{Number.isFinite(days) ? `${days} дн.` : "нет даты"}</td>
+                      <td>{commentOf(deal) || "Комментарий не заполнен"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -704,6 +734,27 @@ function commentOf(entity: StoredEntity) {
     return lower.includes("коммент") || lower.includes("comment");
   });
   return commentField ? entity.raw[commentField] || "" : "";
+}
+
+function lastContactDate(entity: StoredEntity) {
+  const fields = ["Дата последней коммуникации", "Последняя активность", "Дата изменения стадии", FIELD.changedAt, FIELD.createdAt];
+  for (const field of fields) {
+    const parsed = parseBitrixDate(value(entity.raw, field));
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function lastContactText(entity: StoredEntity) {
+  const date = lastContactDate(entity);
+  return date ? date.toLocaleDateString("ru-RU") : "Нет даты";
+}
+
+function daysWithoutContact(entity: StoredEntity) {
+  const date = lastContactDate(entity);
+  if (!date) return Number.POSITIVE_INFINITY;
+  const ms = Date.now() - date.getTime();
+  return Math.max(0, Math.floor(ms / 86_400_000));
 }
 
 function EntityTable({ rows, onSelect }: { rows: StoredEntity[]; onSelect: (entity: StoredEntity) => void }) {

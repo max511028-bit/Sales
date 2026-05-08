@@ -499,6 +499,43 @@ td select {
   max-height: 620px;
 }
 
+.stage-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.stage-filter button {
+  border: 1px solid #d8deea;
+  border-radius: 8px;
+  background: #f2f5fa;
+  color: #344054;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+}
+
+.stage-filter button.active {
+  background: #101827;
+  border-color: #101827;
+  color: white;
+}
+
+.stage-filter span {
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  color: #1f2937;
+  min-width: 28px;
+  padding: 2px 7px;
+  text-align: center;
+}
+
+.stale-row td {
+  background: #fff8ed;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;
