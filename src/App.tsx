@@ -15,8 +15,9 @@ import {
 import { db } from "./db";
 import { importCsv } from "./importer";
 import { ensureDefaultStageMapping } from "./stageDefaults";
-import { entitySummary, getFiltered, groupCount, kpis, lossReason, options, stageKind } from "./analytics";
+import { entitySummary, getFiltered, groupCount, kpis, options } from "./analytics";
 import { FIELD, amountOf, responsibleOf, sourceOf, stageOf, titleOf } from "./fields";
+import { classifyStage, cumulativeLeadFunnel, funnelDistribution, leadOnlyFunnel, lossReasonFor, stageTitle } from "./funnel";
 import type { DashboardFilters, EntityLink, EntityType, StageMapping, StoredEntity } from "./types";
 
 type MainTab = "leadFunnel" | "dealFunnel" | "through";
@@ -106,20 +107,22 @@ function App() {
     }
   }
 
-  const leadStages = stageRows(filtered.leads, "lead", mapping);
-  const dealStages = stageRows(filtered.deals, "deal", mapping);
-  const lossData = groupCount(
-    filtered.deals.filter((deal) => stageKind("deal", stageOf("deal", deal.raw), mapping) === "loss"),
-    (deal) => lossReason("deal", stageOf("deal", deal.raw), mapping),
+  const leadStages = leadOnlyFunnel(filtered.leads);
+  const dealStages = funnelDistribution(filtered.deals, "deal");
+  const leadLossData = groupCount(
+    filtered.leads.filter((lead) => classifyStage("lead", stageOf("lead", lead.raw)).kind === "loss"),
+    (lead) => lossReasonFor("lead", stageOf("lead", lead.raw)),
+  );
+  const dealLossData = groupCount(
+    filtered.deals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).kind === "loss"),
+    (deal) => lossReasonFor("deal", stageOf("deal", deal.raw)),
   );
   const linkData = groupCount(links, (link) => link.confidence);
-  const throughSteps = [
-    { name: "Поступило лидов", value: filtered.leads.length },
-    { name: "Качественные лиды", value: filtered.leads.filter((lead) => stageKind("lead", stageOf("lead", lead.raw), mapping) === "success").length },
-    { name: "Создано сделок", value: filtered.deals.length },
-    { name: "Сделки в работе", value: filtered.deals.filter((deal) => stageKind("deal", stageOf("deal", deal.raw), mapping) === "work").length },
-    { name: "Заключено договоров", value: filtered.deals.filter((deal) => stageKind("deal", stageOf("deal", deal.raw), mapping) === "success").length },
-  ];
+  const throughSteps = cumulativeLeadFunnel(
+    filtered.leads,
+    filtered.deals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).kind !== "service").length,
+    filtered.deals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).kind === "success").length,
+  );
 
   return (
     <div className="app shell">
@@ -186,6 +189,7 @@ function App() {
             setBreakdown={setLeadBreakdown}
             mapping={mapping}
             onSelect={setSelected}
+            extra={<LossPanel title="Почему теряются лиды" lossData={leadLossData} />}
           />
         )}
 
@@ -198,7 +202,7 @@ function App() {
             setBreakdown={setDealBreakdown}
             mapping={mapping}
             onSelect={setSelected}
-            extra={<LossPanel lossData={lossData} />}
+            extra={<LossPanel title="Почему теряются сделки" lossData={dealLossData} />}
           />
         )}
 
@@ -206,7 +210,8 @@ function App() {
           <ThroughTab
             stats={stats}
             steps={throughSteps}
-            lossData={lossData}
+            leadLossData={leadLossData}
+            dealLossData={dealLossData}
             linkData={linkData}
             deals={filtered.deals}
             leads={leads}
@@ -276,7 +281,7 @@ function FunnelTab({
 }: {
   type: EntityType;
   rows: StoredEntity[];
-  stages: Array<{ name: string; value: number; kind: string }>;
+  stages: Array<{ name?: string; label?: string; value: number; kind: string }>;
   breakdown: Breakdown;
   setBreakdown: (value: Breakdown) => void;
   mapping: StageMapping[];
@@ -284,20 +289,24 @@ function FunnelTab({
   extra?: ReactNode;
 }) {
   const groups = breakdownRows(rows, type, breakdown, mapping);
+  const chartGroups = groups.map((item) => ({ name: "label" in item ? item.label : item.name, value: item.value }));
   const totalAmount = rows.reduce((sum, item) => sum + amountOf(item.raw), 0);
+  const activeCount = rows.filter((row) => classifyStage(type, stageOf(type, row.raw)).kind === "active").length;
+  const successCount = rows.filter((row) => classifyStage(type, stageOf(type, row.raw)).kind === "success").length;
+  const lossCount = rows.filter((row) => classifyStage(type, stageOf(type, row.raw)).kind === "loss").length;
   return (
     <>
       <Segmented value={breakdown} onChange={setBreakdown} />
       <section className="kpi-grid compact-kpis">
         <Kpi title={type === "lead" ? "Всего лидов" : "Всего сделок"} value={rows.length} />
-        <Kpi title="В работе" value={rows.filter((row) => stageKind(type, stageOf(type, row.raw), mapping) === "work").length} />
-        <Kpi title="Успешно" value={rows.filter((row) => stageKind(type, stageOf(type, row.raw), mapping) === "success").length} />
-        <Kpi title="Потери" value={rows.filter((row) => stageKind(type, stageOf(type, row.raw), mapping) === "loss").length} />
+        <Kpi title="В работе" value={activeCount} />
+        <Kpi title={type === "lead" ? "Целевые" : "Успешно"} value={successCount} />
+        <Kpi title="Потери" value={lossCount} />
         <Kpi title="Сумма" value={formatMoney(totalAmount)} />
       </section>
       <section className="grid two">
         <Panel title={breakdown === "funnel" ? "Воронка" : BREAKDOWN_LABEL[breakdown]}>
-          {breakdown === "funnel" ? <FunnelBars data={stages} /> : <HorizontalBars data={groups.slice(0, 14)} />}
+          {breakdown === "funnel" ? <FunnelBars data={stages} /> : <HorizontalBars data={chartGroups.slice(0, 14)} />}
         </Panel>
         <Panel title="Таблица среза">
           <PivotTable rows={rows} type={type} groupBy={breakdown} mapping={mapping} />
@@ -314,7 +323,8 @@ function FunnelTab({
 function ThroughTab({
   stats,
   steps,
-  lossData,
+  leadLossData,
+  dealLossData,
   linkData,
   deals,
   leads,
@@ -323,7 +333,8 @@ function ThroughTab({
 }: {
   stats: ReturnType<typeof kpis>;
   steps: Array<{ name: string; value: number }>;
-  lossData: Array<{ name: string; value: number }>;
+  leadLossData: Array<{ name: string; value: number }>;
+  dealLossData: Array<{ name: string; value: number }>;
   linkData: Array<{ name: string; value: number }>;
   deals: StoredEntity[];
   leads: StoredEntity[];
@@ -343,7 +354,8 @@ function ThroughTab({
         <Panel title="Общая воронка продаж" wide>
           <SalesFunnel steps={steps} />
         </Panel>
-        <LossPanel lossData={lossData} />
+        <LossPanel title="Потери по лидам" lossData={leadLossData} />
+        <LossPanel title="Потери по сделкам" lossData={dealLossData} />
         <Panel title="Качество связки">
           <ResponsiveContainer width="100%" height={290}>
             <PieChart>
@@ -407,14 +419,14 @@ function Panel({ title, children, wide }: { title: string; children: ReactNode; 
   );
 }
 
-function FunnelBars({ data }: { data: Array<{ name: string; value: number; kind: string }> }) {
+function FunnelBars({ data }: { data: Array<{ name?: string; label?: string; value: number; kind: string }> }) {
   const max = Math.max(...data.map((item) => item.value), 1);
   return (
     <div className="funnel-list">
       {data.map((item, index) => (
-        <div className={`funnel-row ${item.kind}`} key={item.name}>
+        <div className={`funnel-row ${item.kind}`} key={item.label || item.name}>
           <div>
-            <b>{index + 1}. {item.name}</b>
+            <b>{index + 1}. {item.label || item.name}</b>
             <span>{item.value}</span>
           </div>
           <i style={{ width: `${Math.max((item.value / max) * 100, 4)}%` }} />
@@ -458,10 +470,10 @@ function HorizontalBars({ data }: { data: Array<{ name: string; value: number }>
   );
 }
 
-function LossPanel({ lossData }: { lossData: Array<{ name: string; value: number }> }) {
+function LossPanel({ title, lossData }: { title: string; lossData: Array<{ name: string; value: number }> }) {
   const total = lossData.reduce((sum, item) => sum + item.value, 0);
   return (
-    <Panel title="Причины сливов / отказов">
+    <Panel title={title}>
       <div className="loss-table">
         {lossData.slice(0, 12).map((item) => (
           <div key={item.name}>
@@ -511,7 +523,7 @@ function EntityTable({ rows, onSelect }: { rows: StoredEntity[]; onSelect: (enti
 }
 
 function PivotTable({ rows, type, groupBy, mapping }: { rows: StoredEntity[]; type: EntityType; groupBy: Breakdown; mapping: StageMapping[] }) {
-  const stages = stageRows(rows, type, mapping).map((item) => item.name);
+  const stages = funnelDistribution(rows, type).map((item) => item.label);
   const groups = pivotRows(rows, type, groupBy, stages);
   return (
     <div className="table-wrap pivot-wrap">
@@ -644,11 +656,11 @@ function groupKey(row: StoredEntity, breakdown: Breakdown) {
   if (breakdown === "source") return sourceOf(row.raw);
   if (breakdown === "manager") return responsibleOf(row.raw);
   if (breakdown === "project") return row.raw[FIELD.project] || "Без проекта";
-  return stageOf(row.type, row.raw);
+  return stageTitle(row.type, row.raw);
 }
 
 function breakdownRows(rows: StoredEntity[], type: EntityType, breakdown: Breakdown, mapping: StageMapping[]) {
-  if (breakdown === "funnel") return stageRows(rows, type, mapping);
+  if (breakdown === "funnel") return funnelDistribution(rows, type);
   return groupCount(rows, (row) => groupKey(row, breakdown));
 }
 
@@ -656,7 +668,7 @@ function pivotRows(rows: StoredEntity[], type: EntityType, breakdown: Breakdown,
   const map = new Map<string, { name: string; total: number; stages: Record<string, number> }>();
   rows.forEach((row) => {
     const name = groupKey(row, breakdown);
-    const stage = stageOf(type, row.raw);
+    const stage = stageTitle(type, row.raw);
     const current = map.get(name) || { name, total: 0, stages: {} };
     current.total += 1;
     current.stages[stage] = (current.stages[stage] || 0) + 1;
@@ -668,13 +680,6 @@ function pivotRows(rows: StoredEntity[], type: EntityType, breakdown: Breakdown,
       ...row,
       stages: stages.reduce<Record<string, number>>((acc, stage) => ({ ...acc, [stage]: row.stages[stage] || 0 }), {}),
     }));
-}
-
-function stageRows(rows: StoredEntity[], type: EntityType, mapping: StageMapping[]) {
-  return groupCount(rows, (row) => stageOf(type, row.raw)).map((row) => ({
-    ...row,
-    kind: stageKind(type, row.name, mapping),
-  }));
 }
 
 function formatMoney(value: number) {
