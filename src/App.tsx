@@ -306,7 +306,7 @@ function FunnelTab({
       </section>
       <section className="grid two">
         <Panel title={breakdown === "funnel" ? "Воронка" : BREAKDOWN_LABEL[breakdown]}>
-          {breakdown === "funnel" ? <FunnelBars data={stages} /> : <HorizontalBars data={chartGroups.slice(0, 14)} />}
+          {breakdown === "funnel" ? <FunnelBars data={stages} rows={rows} type={type} onSelect={onSelect} /> : <HorizontalBars data={chartGroups.slice(0, 14)} />}
         </Panel>
         <Panel title="Таблица среза">
           <PivotTable rows={rows} type={type} groupBy={breakdown} mapping={mapping} />
@@ -419,30 +419,79 @@ function Panel({ title, children, wide }: { title: string; children: ReactNode; 
   );
 }
 
-function FunnelBars({ data }: { data: Array<{ name?: string; label?: string; value: number; kind: string; sourceStages?: string[] }> }) {
+function FunnelBars({
+  data,
+  rows,
+  type,
+  onSelect,
+}: {
+  data: Array<{ key?: string; name?: string; label?: string; value: number; kind: string; sourceStages?: string[] }>;
+  rows: StoredEntity[];
+  type: EntityType;
+  onSelect: (entity: StoredEntity) => void;
+}) {
+  const [selectedStep, setSelectedStep] = useState(data[0]?.key || "");
   const max = Math.max(...data.map((item) => item.value), 1);
+  const activeStep = data.find((item) => item.key === selectedStep) || data[0];
+  const stageRows = activeStep
+    ? rows.filter((row) => stageTitle(type, row.raw) === activeStep.label || classifyStage(type, stageOf(type, row.raw)).key === activeStep.key)
+    : [];
   return (
-    <div className="funnel-list">
-      {data.map((item, index) => {
-        const fromStart = max ? Math.round((item.value / max) * 1000) / 10 : 0;
-        const visualWidth = Math.max(100 - index * 11, 34);
-        const tooltip = item.sourceStages?.length ? `Включены стадии Bitrix:\n${item.sourceStages.join("\n")}` : "Стадии пока не найдены";
-        return (
-          <div className={`funnel-row ${item.kind}`} key={item.label || item.name} title={tooltip}>
-            <div>
-              <b>{index + 1}. {item.label || item.name}</b>
-              <span>
-                {item.value} · {index === 0 ? "100%" : `${fromStart}% от входа`}
-              </span>
+    <>
+      <div className="funnel-list">
+        {data.map((item, index) => {
+          const fromStart = max ? Math.round((item.value / max) * 1000) / 10 : 0;
+          const visualWidth = Math.max(100 - index * 11, 34);
+          const tooltip = item.sourceStages?.length ? `Включены стадии Bitrix:\n${item.sourceStages.join("\n")}` : "Стадии пока не найдены";
+          return (
+            <div
+              className={`funnel-row ${item.kind} ${activeStep?.key === item.key ? "selected" : ""}`}
+              key={item.label || item.name}
+              title={tooltip}
+              onClick={() => setSelectedStep(item.key || "")}
+            >
+              <div>
+                <b>{index + 1}. {item.label || item.name}</b>
+                <span>
+                  {item.value} · {index === 0 ? "100%" : `${fromStart}% от входа`}
+                </span>
+              </div>
+              <i style={{ width: `${visualWidth}%` }}>
+                <em />
+              </i>
+              <small>{tooltip}</small>
             </div>
-            <i style={{ width: `${visualWidth}%` }}>
-              <em />
-            </i>
-            <small>{tooltip}</small>
+          );
+        })}
+      </div>
+      {activeStep && (
+        <div className="stage-drilldown">
+          <h3>{activeStep.label || activeStep.name}: кто внутри этапа</h3>
+          <div className="table-wrap compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Клиент / название</th>
+                  <th>Стадия Bitrix</th>
+                  <th>Комментарий</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stageRows.slice(0, 80).map((row) => (
+                  <tr key={`${row.type}-${row.id}`} onClick={() => onSelect(row)}>
+                    <td><BitrixLink type={row.type} id={row.id} /></td>
+                    <td>{titleOf(row.type, row.raw)}</td>
+                    <td>{stageOf(row.type, row.raw)}</td>
+                    <td>{commentOf(row) || "Комментарий не заполнен"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        );
-      })}
-    </div>
+        </div>
+      )}
+    </>
   );
 }
 

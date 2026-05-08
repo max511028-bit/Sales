@@ -299,6 +299,13 @@ td select {
   display: grid;
   gap: 7px;
   position: relative;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.funnel-row.selected {
+  background: #eef3ff;
 }
 
 .funnel-row div {
@@ -446,6 +453,12 @@ td select {
   border-top: 1px solid #e7ebf3;
   margin-top: 16px;
   padding-top: 10px;
+}
+
+.stage-drilldown {
+  border-top: 1px solid #e7ebf3;
+  margin-top: 18px;
+  padding-top: 12px;
 }
 
 .compact-table {

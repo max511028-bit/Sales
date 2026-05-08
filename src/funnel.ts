@@ -65,8 +65,11 @@ export function classifyStage(type: EntityType, stage: string): FunnelStep {
   }
 
   if (normalized.includes("новая сделка")) return byKey("new");
+  if (normalized.includes("существующий клиент") || normalized.includes("нужен подбор") || normalized.includes("мониторинг")) {
+    return byKey("lost");
+  }
   if (normalized.includes("квалификация") || normalized.includes("поиск контактов")) return byKey("qualification");
-  if (normalized.includes("в работе") || normalized.includes("проработка") || normalized.includes("нужен подбор") || normalized.includes("мониторинг")) {
+  if (normalized.includes("в работе") || normalized.includes("проработка")) {
     return byKey("work");
   }
   if (normalized.includes("кп")) return byKey("proposal");
@@ -79,7 +82,7 @@ export function classifyStage(type: EntityType, stage: string): FunnelStep {
   ) {
     return byKey("success");
   }
-  if (normalized.includes("существующий клиент")) return byKey("success");
+  if (normalized.includes("существующий клиент")) return byKey("lost");
   return byKey("lost");
 }
 
@@ -91,8 +94,7 @@ export function lossReasonFor(type: EntityType, stage: string) {
 
   if (type === "lead") {
     if (normalized.includes("недозвон")) return "Не дозвонились";
-    if (normalized.includes("нецелевой")) return "Нецелевой клиент";
-    if (normalized.includes("некачественный")) return "Некачественный лид";
+    if (normalized.includes("нецелевой") || normalized.includes("некачественный")) return "Нецелевой лид";
     if (normalized.includes("закрывают потребность")) return "Закрывают сами";
     if (normalized.includes("отлож")) return "Отложено";
     return "Другая причина";
@@ -101,7 +103,13 @@ export function lossReasonFor(type: EntityType, stage: string) {
   if (normalized.includes("нет потребности")) return "Нет потребности";
   if (normalized.includes("не вышел") || normalized.includes("не отвечает")) return "Не выходит на связь";
   if (normalized.includes("маленький объем")) return "Маленький объем";
-  if (normalized.includes("не предоставляем") || normalized.includes("субподряд")) return "Не наш профиль";
+  if (
+    normalized.includes("не предоставляем") ||
+    normalized.includes("субподряд") ||
+    normalized.includes("существующий клиент") ||
+    normalized.includes("мониторинг") ||
+    normalized.includes("нужен подбор")
+  ) return "Нецелевой для массового персонала";
   if (normalized.includes("дорого") || normalized.includes("ставка")) return "Цена / экономика";
   if (normalized.includes("конкурент")) return "Конкурент";
   if (normalized.includes("сб")) return "Безопасность / отказ";
@@ -136,7 +144,7 @@ export function cumulativeLeadFunnel(leads: StoredEntity[], dealsCreated: number
     { name: "Удалось дозвониться", value: contacted.length, sourceStages: uniqueStages(contacted, "lead") },
     { name: "Целевые лиды", value: target.length, sourceStages: uniqueStages(target, "lead") },
     { name: "Создано сделок", value: dealsCreated, sourceStages: ["Все сделки, кроме технических"] },
-    { name: "Заключено договоров", value: contracts, sourceStages: ["Вышел первый сотрудник на смену", "Передан аккаунт-отделу", "Проект закончен", "Существующий клиент"] },
+    { name: "Заключено договоров", value: contracts, sourceStages: ["Вышел первый сотрудник на смену", "Передан аккаунт-отделу", "Проект закончен"] },
   ];
 }
 
