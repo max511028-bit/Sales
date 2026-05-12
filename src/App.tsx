@@ -405,8 +405,6 @@ function ThroughTab({
 
 function WorkingClientsTab({ deals, onSelect }: { deals: StoredEntity[]; onSelect: (entity: StoredEntity) => void }) {
   const [stageFilter, setStageFilter] = useState("all");
-  const liveStageKeys = ["qualification", "work", "proposal", "agreement"];
-  const stageOrder = { agreement: 1, proposal: 2, work: 3, qualification: 4 } as Record<string, number>;
   const stageLabels = {
     all: "Все",
     agreement: "Согласование",
@@ -416,9 +414,9 @@ function WorkingClientsTab({ deals, onSelect }: { deals: StoredEntity[]; onSelec
   } as Record<string, string>;
 
   const activeDeals = deals
-    .filter((deal) => liveStageKeys.includes(classifyStage("deal", stageOf("deal", deal.raw)).key))
+    .filter(isLiveDeal)
     .sort((a, b) => {
-      const stageDiff = stageOrder[classifyStage("deal", stageOf("deal", a.raw)).key] - stageOrder[classifyStage("deal", stageOf("deal", b.raw)).key];
+      const stageDiff = liveStageOrder(a) - liveStageOrder(b);
       if (stageDiff !== 0) return stageDiff;
       return (lastContactDate(a)?.getTime() || 0) - (lastContactDate(b)?.getTime() || 0);
     });
@@ -445,6 +443,8 @@ function WorkingClientsTab({ deals, onSelect }: { deals: StoredEntity[]; onSelec
             проигранные, технические и уже успешные сделки сюда не попадают.
           </p>
         </div>
+        <ManagerQualityPanel deals={deals} />
+        <StuckDealsPanel deals={activeDeals} onSelect={onSelect} />
         <Panel title="Список клиентов в работе" wide>
           <div className="stage-filter">
             {Object.entries(stageLabels).map(([key, label]) => (
@@ -492,6 +492,109 @@ function WorkingClientsTab({ deals, onSelect }: { deals: StoredEntity[]; onSelec
         </Panel>
       </section>
     </>
+  );
+}
+
+function ManagerQualityPanel({ deals }: { deals: StoredEntity[] }) {
+  const byManager = new Map<string, StoredEntity[]>();
+  deals
+    .filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).kind !== "service")
+    .forEach((deal) => {
+      const manager = responsibleOf(deal.raw);
+      byManager.set(manager, [...(byManager.get(manager) || []), deal]);
+    });
+  const rows = [...byManager.entries()]
+    .map(([manager, managerDeals]) => {
+      const active = managerDeals.filter(isLiveDeal);
+      const success = managerDeals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).kind === "success");
+      const loss = managerDeals.filter((deal) => classifyStage("deal", stageOf("deal", deal.raw)).kind === "loss");
+      const stale = active.filter((deal) => daysWithoutContact(deal) >= 7);
+      return {
+        manager,
+        total: managerDeals.length,
+        active: active.length,
+        success: success.length,
+        loss: loss.length,
+        stale: stale.length,
+        conversion: managerDeals.length ? Math.round((success.length / managerDeals.length) * 1000) / 10 : 0,
+      };
+    })
+    .filter((row) => row.total > 0)
+    .sort((a, b) => b.active - a.active || b.success - a.success || b.total - a.total);
+
+  return (
+    <Panel title="Качество работы менеджеров" wide>
+      <div className="table-wrap compact-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Менеджер</th>
+              <th>Всего сделок</th>
+              <th>В работе</th>
+              <th>Успешно</th>
+              <th>Потери</th>
+              <th>Конверсия в договор</th>
+              <th>Нет контакта 7+ дней</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.manager}>
+                <td><b>{row.manager}</b></td>
+                <td>{row.total}</td>
+                <td>{row.active}</td>
+                <td>{row.success}</td>
+                <td>{row.loss}</td>
+                <td>{row.conversion}%</td>
+                <td className={row.stale ? "risk-cell" : ""}>{row.stale || ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+function StuckDealsPanel({ deals, onSelect }: { deals: StoredEntity[]; onSelect: (entity: StoredEntity) => void }) {
+  const stuckDeals = deals
+    .map((deal) => ({ deal, days: daysOnStage(deal), limit: stuckLimit(deal) }))
+    .filter(({ days, limit }) => days >= limit)
+    .sort((a, b) => b.days - a.days)
+    .slice(0, 80);
+
+  return (
+    <Panel title="Застрявшие сделки" wide>
+      <p className="muted">Сюда попадают активные сделки, которые слишком долго стоят на текущем этапе: квалификация 7+ дней, проработка 10+ дней, КП 7+ дней, согласование 10+ дней.</p>
+      <div className="table-wrap compact-table">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Клиент</th>
+              <th>Этап</th>
+              <th>Менеджер</th>
+              <th>Дней на этапе</th>
+              <th>Последний контакт</th>
+              <th>Комментарий</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stuckDeals.map(({ deal, days }) => (
+              <tr key={deal.id} onClick={() => onSelect(deal)} className="stale-row">
+                <td><BitrixLink type="deal" id={deal.id} /></td>
+                <td>{titleOf("deal", deal.raw)}</td>
+                <td>{stageTitle("deal", deal.raw)}</td>
+                <td>{responsibleOf(deal.raw)}</td>
+                <td>{days} дн.</td>
+                <td>{lastContactText(deal)}</td>
+                <td>{commentOf(deal) || "Комментарий не заполнен"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   );
 }
 
@@ -651,17 +754,40 @@ function LossPanel({
   onSelect: (entity: StoredEntity) => void;
 }) {
   const [selectedReason, setSelectedReason] = useState("");
-  const total = lossData.reduce((sum, item) => sum + item.value, 0);
-  const activeReason = selectedReason || lossData[0]?.name || "";
+  const [lossGroup, setLossGroup] = useState("all");
+  const lostRows = rows.filter((row) => classifyStage(type, stageOf(type, row.raw)).kind === "loss");
+  const visibleLostRows = lostRows.filter((row) => lossGroup === "all" || lossGroupFor(type, stageOf(type, row.raw)) === lossGroup);
+  const visibleLossData = groupCount(visibleLostRows, (row) => lossReasonFor(type, stageOf(type, row.raw)));
+  const total = visibleLossData.reduce((sum, item) => sum + item.value, 0);
+  const activeReason = selectedReason && visibleLossData.some((item) => item.name === selectedReason) ? selectedReason : visibleLossData[0]?.name || "";
+  const lossGroups = [
+    { key: "all", label: "Все", value: lostRows.length },
+    { key: "client", label: "Отказ клиента", value: lostRows.filter((row) => lossGroupFor(type, stageOf(type, row.raw)) === "client").length },
+    { key: "our", label: "Наш отказ", value: lostRows.filter((row) => lossGroupFor(type, stageOf(type, row.raw)) === "our").length },
+    { key: "notTarget", label: "Нецелевые", value: lostRows.filter((row) => lossGroupFor(type, stageOf(type, row.raw)) === "notTarget").length },
+    { key: "other", label: "Прочее", value: lostRows.filter((row) => lossGroupFor(type, stageOf(type, row.raw)) === "other").length },
+  ].filter((item) => item.value > 0 || item.key === "all");
   const comments = rows
     .filter((row) => classifyStage(type, stageOf(type, row.raw)).kind === "loss")
+    .filter((row) => lossGroup === "all" || lossGroupFor(type, stageOf(type, row.raw)) === lossGroup)
     .filter((row) => lossReasonFor(type, stageOf(type, row.raw)) === activeReason)
     .map((row) => ({ row, comment: commentOf(row) }))
     .slice(0, 80);
   return (
     <Panel title={title}>
+      <div className="stage-filter loss-filter">
+        {lossGroups.map((item) => (
+          <button key={item.key} className={lossGroup === item.key ? "active" : ""} onClick={() => {
+            setLossGroup(item.key);
+            setSelectedReason("");
+          }}>
+            {item.label}
+            <span>{item.value}</span>
+          </button>
+        ))}
+      </div>
       <div className="loss-table">
-        {lossData.slice(0, 12).map((item) => (
+        {visibleLossData.slice(0, 12).map((item) => (
           <button className={activeReason === item.name ? "active" : ""} key={item.name} onClick={() => setSelectedReason(item.name)}>
             <span>{item.name}</span>
             <b>{item.value}</b>
@@ -736,6 +862,15 @@ function commentOf(entity: StoredEntity) {
   return commentField ? entity.raw[commentField] || "" : "";
 }
 
+function isLiveDeal(deal: StoredEntity) {
+  return ["qualification", "work", "proposal", "agreement"].includes(classifyStage("deal", stageOf("deal", deal.raw)).key);
+}
+
+function liveStageOrder(deal: StoredEntity) {
+  const order = { agreement: 1, proposal: 2, work: 3, qualification: 4 } as Record<string, number>;
+  return order[classifyStage("deal", stageOf("deal", deal.raw)).key] || 99;
+}
+
 function lastContactDate(entity: StoredEntity) {
   const fields = ["Дата последней коммуникации", "Последняя активность", "Дата изменения стадии", FIELD.changedAt, FIELD.createdAt];
   for (const field of fields) {
@@ -755,6 +890,39 @@ function daysWithoutContact(entity: StoredEntity) {
   if (!date) return Number.POSITIVE_INFINITY;
   const ms = Date.now() - date.getTime();
   return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
+function stageChangedDate(entity: StoredEntity) {
+  return parseBitrixDate(value(entity.raw, "Дата изменения стадии")) || lastContactDate(entity);
+}
+
+function daysOnStage(entity: StoredEntity) {
+  const date = stageChangedDate(entity);
+  if (!date) return Number.POSITIVE_INFINITY;
+  const ms = Date.now() - date.getTime();
+  return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
+function stuckLimit(entity: StoredEntity) {
+  const key = classifyStage("deal", stageOf("deal", entity.raw)).key;
+  if (key === "qualification") return 7;
+  if (key === "work") return 10;
+  if (key === "proposal") return 7;
+  if (key === "agreement") return 10;
+  return 14;
+}
+
+function lossGroupFor(type: EntityType, stage: string) {
+  const text = stage.toLowerCase().replace(/ё/g, "е");
+  if (type === "lead") {
+    if (text.includes("некачественный") || text.includes("нецелевой")) return "notTarget";
+    if (text.includes("недозвон") || text.includes("закрывают")) return "client";
+    return "other";
+  }
+  if (text.includes("существующий клиент") || text.includes("мониторинг") || text.includes("нужен подбор") || text.includes("не предоставляем") || text.includes("субподряд")) return "notTarget";
+  if (text.includes("маленький объем") || text.includes("ставка клиента") || text.includes("не прошли сб") || text.includes("клиент не прошел нашу сб")) return "our";
+  if (text.includes("нет потребности") || text.includes("не вышел") || text.includes("не отвечает") || text.includes("выбрали конкурента") || text.includes("будут реализовать сами") || text.includes("конкурент")) return "client";
+  return "other";
 }
 
 function EntityTable({ rows, onSelect }: { rows: StoredEntity[]; onSelect: (entity: StoredEntity) => void }) {

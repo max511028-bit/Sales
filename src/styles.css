@@ -532,8 +532,18 @@ td select {
   text-align: center;
 }
 
+.loss-filter {
+  margin-bottom: 14px;
+}
+
 .stale-row td {
   background: #fff8ed;
+}
+
+.risk-cell {
+  background: #fff1f0;
+  color: #b42318;
+  font-weight: 800;
 }
 
 table {
